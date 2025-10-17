@@ -22,8 +22,8 @@ INSTALLED_APPS = [
 
 models.py Setup
 User model:
-    email="you@example.com",
-    name="Your Name",
+    email=" email ",
+    name=" name ",
     stack="Django (Python)"
 
 
@@ -61,4 +61,4 @@ Requests (for external API calls)
 
 You can test the endpoint directly with curl or a browser:
 
-curl http://127.0.0.1:8000/api/user-info/
+curl http://127.0.0.1:8000/me
