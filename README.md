@@ -1,3 +1,5 @@
+HNG STAGE 0
+
 🚀 API Response
 {
   "status": "success",
@@ -10,31 +12,30 @@
   "fact": "Cats sleep for around 13 to 14 hours a day."
 }
 
-🧱 Project Structure
+⚙️ Installation & Setup
+
+Clone the repository
+
+git clone https://github.com/statick64/HNGstage0
+
+cd into cloned repo
+
+Create and activate a virtual environment
+
+run python -m venv venv
+source venv/bin/activate      # On macOS/Linux
+venv\Scripts\activate         # On Windows
 
 
-settings.py Setup
-INSTALLED_APPS = [
-    'api',
-    'rest_framework',
-]
+run pip install -r requirements.txt 
 
 
-models.py Setup
-User model:
-    email=" email ",
-    name=" name ",
-    stack="Django (Python)"
-
-
-
-Run the server
-
-python manage.py runserver
+run python manage.py runserver
 
 🌐 API Endpoint
 Method	Endpoint	Description
-GET	/me	Returns success, user info, datetime and cat fact
+GET	/api/user-info/	Returns status, user info, datetinme  and cat fact
+
 🧠 How It Works
 
 The view in views.py:
@@ -57,8 +58,11 @@ Django REST Framework (DRF)
 
 Requests (for external API calls)
 
+Enviroment vairable
+SECRET_KEY = 'django-insecure-#__-9pf+a0n!vfk4#qid$nrouslbd0b%dq7qh&8t#3gr68@duh' 
+
 🧪 Test
 
 You can test the endpoint directly with curl or a browser:
 
-curl http://127.0.0.1:8000/me
+curl https://enchanting-eagerness-production.up.railway.app/me
