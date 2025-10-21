@@ -1,34 +1,74 @@
 import requests
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, generics
+from django.db import IntegrityError
 from datetime import datetime, timezone
 from rest_framework.decorators import api_view
+from rest_framework.views import APIView
+import hashlib
 
-from .models import User
-from .Serializers import UserSerializer
+from .models import Sentence, Properties
+from .Serializers import SentenceSerializer , PropertiesSerializer
 
 
 
-@api_view(['GET'])
-def getData(request):
-    try:
-        user = User.objects.first() # Getting the first users from the database
-        if not user:
-            return Response({"status": "error", "message": "No users available"}, status=404)  # error hadling if there are no users available 
-        serializer = UserSerializer(user, many=False) # Serializes the user data
-        cat_fact_request = requests.get("https://catfact.ninja/fact")  
-        cat_fact = cat_fact_request.json().get('fact', 'unable to get cat fact')  # Gets a random cat fact
-        context = {  # Creates the json response
-            'status': 'success',
-            'user': serializer.data,
-            "timestamp": datetime.now(timezone.utc).isoformat(), # datetime in Iso format
-            'fact': cat_fact, 
-
-        }
-        return Response(context)
-    except Exception as e:
-        return Response({"status": "error", "message": str(e)}, status=500) # Error handling
     
 
+class SentenceView(generics.CreateAPIView):
+    
+    serializer_class = SentenceSerializer
+    
+    def create(self, request, *args, **kwargs):
+        value = request.data.get("value")
 
+        # Validate that 'value' is provided
+        if not value:
+            return Response(
+                {"error": "The 'value' field is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+        
+        # Pass only the 'value' since model auto-hashes the id
+        serializer = self.get_serializer(data={"value": value})
+        if not serializer.is_valid():
+            return Response(
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY  # 422 for validation errors
+            )
+        
+        try:
+            # self.perform_create(serializer)
+            sentence = serializer.save()
+            
+            # Create or update its Properties
+            properties, _ = Properties.objects.get_or_create(sentence=sentence)
+            properties.save()  # triggers automatic computation from model.save()
+            properties_data = PropertiesSerializer(properties).data
+
+            return Response(
+                {
+                    "id": serializer.data["id"],
+                    "value": serializer.data["value"],
+                    "properties": {
+                        "length": properties_data.get("length"),
+                        "is_palindrome": properties_data.get("is_palindrome"),
+                        "unique_characters": properties_data.get("unique_characters"),
+                        "word_count": properties_data.get("word_count"),
+                        "sha256_hash": properties_data.get("sha256_hash"),
+                        "character_frequency_map": properties_data.get("character_frequency_map")
+                    },
+                    "created_at": serializer.data["created_at"],},
+                status=status.HTTP_201_CREATED
+            )
+        except IntegrityError:
+            # Return the existing sentence instead of failing
+            existing_sentence = Sentence.objects.get(value=value)
+            existing_data = SentenceSerializer(existing_sentence).data
+            return Response(
+                {
+                    "message": "Sentence already exists.",
+                },
+                status=status.HTTP_409_CONFLICT
+            )
 

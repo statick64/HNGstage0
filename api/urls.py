@@ -1,7 +1,7 @@
 from django.urls import path
-from . import views
+from .views import SentenceView
 
 #/me url pattern 
 urlpatterns = [
-    path('me', views.getData),
+    path('strings', SentenceView.as_view()),
 ]
