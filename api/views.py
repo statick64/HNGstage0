@@ -2,10 +2,8 @@ import requests
 from rest_framework.response import Response
 from rest_framework import status, generics
 from django.db import IntegrityError
-from datetime import datetime, timezone
-from rest_framework.decorators import api_view
-from rest_framework.views import APIView
-import hashlib
+from django.shortcuts import get_object_or_404
+
 
 from .models import Sentence, Properties
 from .Serializers import SentenceSerializer , PropertiesSerializer
@@ -14,11 +12,11 @@ from .Serializers import SentenceSerializer , PropertiesSerializer
 
     
 
-class SentenceView(generics.CreateAPIView):
+class SentencePostView(generics.CreateAPIView):
     
     serializer_class = SentenceSerializer
     
-    def create(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         value = request.data.get("value")
 
         # Validate that 'value' is provided
@@ -62,9 +60,7 @@ class SentenceView(generics.CreateAPIView):
                 status=status.HTTP_201_CREATED
             )
         except IntegrityError:
-            # Return the existing sentence instead of failing
-            existing_sentence = Sentence.objects.get(value=value)
-            existing_data = SentenceSerializer(existing_sentence).data
+            # Return a message 
             return Response(
                 {
                     "message": "Sentence already exists.",
@@ -72,3 +68,45 @@ class SentenceView(generics.CreateAPIView):
                 status=status.HTTP_409_CONFLICT
             )
 
+    
+
+
+
+class SentenceGetView(generics.RetrieveAPIView):
+    serializer_class = SentenceSerializer
+    
+    def get(self, request, string_value, *args, **kwargs):
+        # Ensure the parameter is a string
+        if not isinstance(string_value, str):
+            return Response(
+                {"error": "The string value must be a string."},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
+
+        try:
+            # Retrieve the Sentence
+            sentence = Sentence.objects.get(value=string_value)
+            sentence_data = SentenceSerializer(sentence).data
+
+            # Retrieve the Properties
+            try:
+                properties = Properties.objects.get(sentence=sentence)
+                properties_data = PropertiesSerializer(properties).data
+            except Properties.DoesNotExist:
+                properties_data = None
+
+            return Response(
+                {
+                    "id": sentence_data["id"],
+                    "value": sentence_data["value"],
+                    "properties": properties_data,
+                    "created_at": sentence_data["created_at"],
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except Sentence.DoesNotExist:
+            return Response(
+                {"error": "Sentence not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
