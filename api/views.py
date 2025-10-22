@@ -37,11 +37,7 @@ class SentencePostAndFilterView(generics.ListCreateAPIView):
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY  # 422 for validation errors
             )
             
-        if not serializer.is_valid():
-            return Response(
-                status=status.HTTP_400_BAD_REQUEST  # 422 for validation errors
-            )
-        
+
         try:
             # self.perform_create(serializer)
             sentence = serializer.save()
