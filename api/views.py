@@ -1,8 +1,10 @@
+import re
 import requests
 from rest_framework.response import Response
 from rest_framework import status, generics
 from django.db import IntegrityError
-from django.shortcuts import get_object_or_404
+from urllib.parse import unquote
+
 
 
 from .models import Sentence, Properties
@@ -12,7 +14,7 @@ from .Serializers import SentenceSerializer , PropertiesSerializer
 
     
 
-class SentencePostView(generics.CreateAPIView):
+class SentencePostAndFilterView(generics.ListCreateAPIView):
     
     serializer_class = SentenceSerializer
     
@@ -67,12 +69,91 @@ class SentencePostView(generics.CreateAPIView):
                 },
                 status=status.HTTP_409_CONFLICT
             )
+    
+    
+    def get(self, request, *args, **kwargs):
+        # Get query parameters
+        is_palindrome = request.query_params.get("is_palindrome")
+        min_length = request.query_params.get("min_length")
+        max_length = request.query_params.get("max_length")
+        word_count = request.query_params.get("word_count")
+        contains_character = request.query_params.get("contains_character")
+
+        # Start with all properties
+        queryset = Properties.objects.select_related("sentence").all()
+        
+
+        # Apply filters dynamically
+        if is_palindrome is not None:
+            if is_palindrome.lower() in ["true", "1", "yes"]:
+                queryset = queryset.filter(is_palindrome=True)
+            elif is_palindrome.lower() in ["false", "0", "no"]:
+                queryset = queryset.filter(is_palindrome=False)
+
+        if min_length:
+            queryset = queryset.filter(length__gte=int(min_length))
+
+        if max_length:
+            queryset = queryset.filter(length__lte=int(max_length))
+
+        if word_count:
+            queryset = queryset.filter(word_count=int(word_count))
+
+        if contains_character:
+            queryset = queryset.filter(sentence__value__icontains=contains_character)
+            
+        if not queryset:
+            return Response(
+                {"error": "Please provide a query parameter"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # getting filters used
+        filters_applied = {
+            "is_palindrome": is_palindrome,
+            "min_length": min_length,
+            "max_length": max_length,
+            "word_count": word_count,
+            "contains_character": contains_character,
+        }
+
+        # Serialize the results
+        results = []
+        for prop in queryset:
+            sentence_data = SentenceSerializer(prop.sentence).data
+            properties_data = PropertiesSerializer(prop).data
+            results.append({
+                "id": sentence_data["id"],
+                "value": sentence_data["value"],
+                "properties": {
+                    "length": properties_data.get("length"),
+                    "is_palindrome": properties_data.get("is_palindrome"),
+                    "unique_characters": properties_data.get("unique_characters"),
+                    "word_count": properties_data.get("word_count"),
+                    "sha256_hash": properties_data.get("sha256_hash"),
+                    "character_frequency_map": properties_data.get("character_frequency_map")
+                },
+                "created_at": sentence_data["created_at"]
+            })
+
+        if not results:
+            return Response(
+                {"message": "No sentences found matching the provided filters."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        return Response({
+                            "data":results,
+                            "count": len(results),
+                            "filters_applied": filters_applied,
+                        }, 
+                        status=status.HTTP_200_OK)
 
     
 
 
 
-class SentenceGetView(generics.RetrieveAPIView):
+class SentenceGetAndDeleteView(generics.RetrieveDestroyAPIView):
     serializer_class = SentenceSerializer
     
     def get(self, request, string_value, *args, **kwargs):
@@ -99,9 +180,16 @@ class SentenceGetView(generics.RetrieveAPIView):
                 {
                     "id": sentence_data["id"],
                     "value": sentence_data["value"],
-                    "properties": properties_data,
+                    "properties": {
+                        "length": properties_data.get("length"),
+                        "is_palindrome": properties_data.get("is_palindrome"),
+                        "unique_characters": properties_data.get("unique_characters"),
+                        "word_count": properties_data.get("word_count"),
+                        "sha256_hash": properties_data.get("sha256_hash"),
+                        "character_frequency_map": properties_data.get("character_frequency_map")
+                    },
                     "created_at": sentence_data["created_at"],
-                },
+                },  
                 status=status.HTTP_200_OK
             )
 
@@ -110,3 +198,107 @@ class SentenceGetView(generics.RetrieveAPIView):
                 {"error": "Sentence not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
+            
+            
+    def delete(self, request, string_value, *args, **kwargs):
+        # Decode URL-encoded values 
+        decoded_value = unquote(string_value).strip()
+
+        if not decoded_value:
+            return Response(
+                {"error": "A valid string value must be provided in the URL."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            sentence = Sentence.objects.get(value=decoded_value)
+            sentence.delete()  # Automatically deletes related Properties via CASCADE
+
+            return Response(
+                status=status.HTTP_204_NO_CONTENT
+            )
+
+        except Sentence.DoesNotExist:
+            return Response(
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+        
+        
+class SentenceNaturalLanguageFilterView(generics.ListAPIView):
+    serializer_class = SentenceSerializer
+
+    def get(self, request, *args, **kwargs):
+        query = request.query_params.get("query", "").lower()
+
+        if not query:
+            return Response(
+                {"error": "Please provide a query parameter, e.g. ?query=all single word palindromic strings"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Start with all properties
+        queryset = Properties.objects.select_related("sentence").all()
+
+        # --- Basic interpretation rules ---
+        # Palindrome detection
+        if "palindrome" in query or "palindromic" in query:
+            queryset = queryset.filter(is_palindrome=True)
+
+        # Multi-word or single-word sentences
+        if "single word" in query or "one word" in query:
+            queryset = queryset.filter(word_count=1)
+        elif "multiple words" in query or "multi word" in query:
+            queryset = queryset.filter(word_count__gt=1)
+
+        # Length-based filters
+        if "short" in query:
+            queryset = queryset.filter(length__lte=5)
+        if "long" in query:
+            queryset = queryset.filter(length__gte=10)
+
+        # Character-based filters
+        import re
+        match = re.search(r"contains\s+character\s+['\"]?([a-zA-Z])['\"]?", query)
+        if match:
+            char = match.group(1)
+            queryset = queryset.filter(sentence__value__icontains=char)
+
+        # Word count rules
+        match = re.search(r"(\d+)\s+word", query)
+        if match:
+            count = int(match.group(1))
+            queryset = queryset.filter(word_count=count)
+
+        # Fallback for 'all strings'
+        if "all strings" in query or query.strip() == "all":
+            pass  # no filter needed
+
+        # Serialize results
+        results = []
+        for prop in queryset:
+            sentence_data = SentenceSerializer(prop.sentence).data
+            properties_data = PropertiesSerializer(prop).data
+            results.append({
+                "id": sentence_data["id"],
+                "value": sentence_data["value"],
+                "properties": {
+                    "length": properties_data.get("length"),
+                    "is_palindrome": properties_data.get("is_palindrome"),
+                    "unique_characters": properties_data.get("unique_characters"),
+                    "word_count": properties_data.get("word_count"),
+                    "sha256_hash": properties_data.get("sha256_hash"),
+                    "character_frequency_map": properties_data.get("character_frequency_map")
+                },
+                "created_at": sentence_data["created_at"]
+            })
+
+        if not results:
+            return Response(
+                {"message": "No sentences found matching the natural language query."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        return Response(results, status=status.HTTP_200_OK)
+    

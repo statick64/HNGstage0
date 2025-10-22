@@ -58,7 +58,7 @@ class Properties(models.Model):
         self.word_count = word_count
         
     def save(self, *args, **kwargs):
-        """Automatically compute all properties before saving."""
+        # Automatically compute all properties before saving.
         self.length = len(self.sentence.value)
         self.is_palindrome_func()
         self.count_unique_characters()
