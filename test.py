@@ -22,21 +22,13 @@
 #     cleaned_text = text.lower().replace(" ", "")
 #     return cleaned_text == cleaned_text[::-1]
 
-def is_palindrome(input_string):
-    """
-    Checks if a given string is a palindrome, ignoring spaces and case.
+# def is_palindrome(input_string):
 
-    Args:
-        input_string: The string to check.
-
-    Returns:
-        True if the string is a palindrome, False otherwise.
-    """
-    # Remove spaces and convert to lowercase for case-insensitive comparison
-    cleaned_string = "".join(char for char in input_string if char.isalnum()).lower()
+#     # Remove spaces and convert to lowercase for case-insensitive comparison
+#     cleaned_string = "".join(char for char in input_string if char.isalnum()).lower()
     
-    # Compare the cleaned string with its reverse
-    return cleaned_string == cleaned_string[::-1]
+#     # Compare the cleaned string with its reverse
+#     return cleaned_string == cleaned_string[::-1]
 
 
 # def count_unique_characters(input_string):
@@ -57,5 +49,9 @@ def is_palindrome(input_string):
 # sentence = "Python"
 # word_counter(sentence)
 
-print (is_palindrome("A man, a plan, a canal: Panama"))
+# print (is_palindrome("A man, a plan, a canal: Panama"))
 
+loop = 1234
+str_loop = str(loop)
+
+print(f"this is th{len(str_loop)} {loop}")

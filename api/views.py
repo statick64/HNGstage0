@@ -24,20 +24,24 @@ class SentencePostAndFilterView(generics.ListCreateAPIView):
         # Validate that 'value' is provided
         if not value:
             return Response(
-                {"error": "The 'value' field is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
 
         
-       
-        serializer = self.get_serializer(data={"value": value})
-        if serializer is not str:
+        if not isinstance(value, str):
             return Response(
-                status=status.HTTP_422_UNPROCESSABLE_ENTITY  # 422 for validation errors
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY 
             )
-            
-
+        
+        
+        # Pass only the 'value' since model auto-hashes the id
+        serializer = self.get_serializer(data={"value": value})
+        if not serializer.is_valid():
+            return Response(
+                status=status.HTTP_400_BAD_REQUEST  # 404 for validation errors
+            )
+        
         try:
             # self.perform_create(serializer)
             sentence = serializer.save()
@@ -149,6 +153,7 @@ class SentencePostAndFilterView(generics.ListCreateAPIView):
                             "filters_applied": filters_applied,
                         }, 
                         status=status.HTTP_200_OK)
+
 
     
 
