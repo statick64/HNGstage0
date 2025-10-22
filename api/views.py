@@ -30,11 +30,16 @@ class SentencePostAndFilterView(generics.ListCreateAPIView):
 
 
         
-        # Pass only the 'value' since model auto-hashes the id
+       
         serializer = self.get_serializer(data={"value": value})
-        if not serializer.is_valid():
+        if serializer is not str:
             return Response(
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY  # 422 for validation errors
+            )
+            
+        if not serializer.is_valid():
+            return Response(
+                status=status.HTTP_400_BAD_REQUEST  # 422 for validation errors
             )
         
         try:
@@ -190,7 +195,6 @@ class SentenceGetAndDeleteView(generics.RetrieveDestroyAPIView):
 
         except Sentence.DoesNotExist:
             return Response(
-                {"error": "Sentence not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
             
@@ -219,7 +223,7 @@ class SentenceNaturalLanguageFilterView(generics.ListAPIView):
     serializer_class = SentenceSerializer
 
     def get(self, request, *args, **kwargs):
-        query = request.query_params.get("query", "").lower()
+        query = request.query_params.get("query", "").lower().strip()
 
         if not query:
             return Response(
@@ -227,44 +231,90 @@ class SentenceNaturalLanguageFilterView(generics.ListAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Start with all properties
         queryset = Properties.objects.select_related("sentence").all()
+        filters = {}
+        contains_character = None
+        conflicts = []
 
-        # --- Basic interpretation rules ---
-        # Palindrome detection
-        if "palindrome" in query or "palindromic" in query:
-            queryset = queryset.filter(is_palindrome=True)
+        # === Natural Language & Regex Parsing ===
+        # Palindromic
+        if re.search(r"\bpalindrome|palindromic\b", query):
+            filters["is_palindrome"] = True
 
-        # Multi-word or single-word sentences
-        if "single word" in query or "one word" in query:
-            queryset = queryset.filter(word_count=1)
-        elif "multiple words" in query or "multi word" in query:
-            queryset = queryset.filter(word_count__gt=1)
+        # Word count: single vs multiple
+        if re.search(r"\bsingle\s+word|one\s+word\b", query):
+            filters["word_count"] = 1
+        if re.search(r"\bmultiple\s+words|multi\s+word\b", query):
+            if "word_count" in filters and filters["word_count"] == 1:
+                conflicts.append("Cannot filter both single-word and multi-word strings.")
+            filters["word_count__gt"] = 1
 
-        # Length-based filters
-        if "short" in query:
-            queryset = queryset.filter(length__lte=5)
-        if "long" in query:
-            queryset = queryset.filter(length__gte=10)
+        # Length constraints
+        longer_match = re.search(r"longer\s+than\s+(\d+)", query)
+        shorter_match = re.search(r"shorter\s+than\s+(\d+)", query)
 
-        # Character-based filters
-        import re
-        match = re.search(r"contains\s+character\s+['\"]?([a-zA-Z])['\"]?", query)
+        if longer_match:
+            filters["min_length"] = int(longer_match.group(1)) + 1
+        if shorter_match:
+            filters["max_length"] = int(shorter_match.group(1)) - 1
+
+        # Detect general adjectives
+        if "short" in query and "max_length" not in filters:
+            filters["max_length"] = 5
+        if "long" in query and "min_length" not in filters:
+            filters["min_length"] = 10
+
+        # Conflict: overlapping length constraints
+        if "min_length" in filters and "max_length" in filters:
+            if filters["min_length"] > filters["max_length"]:
+                conflicts.append("Minimum length is greater than maximum length (invalid range).")
+
+        # Character-based
+        match = re.search(r"contain(?:s|ing)?(?:\s+the\s+letter)?\s+['\"]?([a-zA-Z])['\"]?", query)
         if match:
-            char = match.group(1)
-            queryset = queryset.filter(sentence__value__icontains=char)
+            contains_character = match.group(1).lower()
+            filters["contains_character"] = contains_character
 
-        # Word count rules
-        match = re.search(r"(\d+)\s+word", query)
-        if match:
-            count = int(match.group(1))
-            queryset = queryset.filter(word_count=count)
+        # First vowel rule
+        if re.search(r"contain(?:s|ing)?\s+(the\s+)?first\s+vowel", query):
+            if contains_character and contains_character != "a":
+                conflicts.append("Conflicting contains_character filters (letter vs first vowel).")
+            contains_character = "a"
+            filters["contains_character"] = "a"
 
-        # Fallback for 'all strings'
-        if "all strings" in query or query.strip() == "all":
-            pass  # no filter needed
+        # "All strings" → no filter
+        if query.strip() in ["all", "all strings"]:
+            filters["no_filter"] = True
 
-        # Serialize results
+        # === Handle Conflicts ===
+        if conflicts:
+            return Response(
+                {
+                    "error": "Query parsed but resulted in conflicting filters.",
+                    "details": conflicts,
+                    "interpreted_query": {
+                        "original": query,
+                        "parsed_filters": filters
+                    }
+                },
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
+
+        # === Apply Filters ===
+        if "is_palindrome" in filters:
+            queryset = queryset.filter(is_palindrome=filters["is_palindrome"])
+        if "word_count" in filters:
+            queryset = queryset.filter(word_count=filters["word_count"])
+        if "word_count__gt" in filters:
+            queryset = queryset.filter(word_count__gt=filters["word_count__gt"])
+        if "min_length" in filters:
+            queryset = queryset.filter(length__gte=filters["min_length"])
+        if "max_length" in filters:
+            queryset = queryset.filter(length__lte=filters["max_length"])
+        if contains_character:
+            queryset = queryset.filter(sentence__value__icontains=contains_character)
+
+        # === Build Response Data ===
         results = []
         for prop in queryset:
             sentence_data = SentenceSerializer(prop.sentence).data
@@ -283,11 +333,19 @@ class SentenceNaturalLanguageFilterView(generics.ListAPIView):
                 "created_at": sentence_data["created_at"]
             })
 
+        # No matches
         if not results:
             return Response(
                 {"message": "No sentences found matching the natural language query."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        return Response(results, status=status.HTTP_200_OK)
-    
+        # Final Response
+        return Response({
+            "data": results,
+            "count": len(results),
+            "interpreted_query": {
+                "original": query,
+                "parsed_filters": filters
+            }
+        }, status=status.HTTP_200_OK)

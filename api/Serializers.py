@@ -9,10 +9,10 @@ class SentenceSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('created_at', 'id')
     
-    def validate_value(self, value):
-        if not isinstance(value, str):
-            raise serializers.ValidationError("The 'value' field must be a string.")
-        return value
+    # def validate_value(self, value):
+    #     if not isinstance(value, str):
+    #         raise serializers.ValidationError("The 'value' field must be a string.")
+    #     return value
     
          
         
