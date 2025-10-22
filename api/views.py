@@ -158,11 +158,6 @@ class SentenceGetAndDeleteView(generics.RetrieveDestroyAPIView):
     
     def get(self, request, string_value, *args, **kwargs):
         # Ensure the parameter is a string
-        if not isinstance(string_value, str):
-            return Response(
-                {"error": "The string value must be a string."},
-                status=status.HTTP_422_UNPROCESSABLE_ENTITY
-            )
 
         try:
             # Retrieve the Sentence
@@ -203,12 +198,6 @@ class SentenceGetAndDeleteView(generics.RetrieveDestroyAPIView):
     def delete(self, request, string_value, *args, **kwargs):
         # Decode URL-encoded values 
         decoded_value = unquote(string_value).strip()
-
-        if not decoded_value:
-            return Response(
-                {"error": "A valid string value must be provided in the URL."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         try:
             sentence = Sentence.objects.get(value=decoded_value)
